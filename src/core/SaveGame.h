@@ -40,7 +40,8 @@ extern const fs::path SAVEGAME_NAME;
 struct SaveGame {
 	
 	bool quicksave;
-	
+	bool autosave;
+
 	std::string name;
 	
 	fs::path savefile;
@@ -51,6 +52,7 @@ struct SaveGame {
 	
 	SaveGame()
 		: quicksave(false)
+		, autosave(false)
 		, level(0)
 		, stime(0)
 	{ }
@@ -87,6 +89,9 @@ public:
 	
 	//! Perform a quicksave: Maintain a number of quicksave slots and always overwrite the oldest one.
 	bool quicksave(const Image & thumbnail = Image());
+
+	//! Perform an autosave: Always overwrite the single dedicated autosave slot.
+	bool autosave(const Image & thumbnail = Image());
 	
 	//! Return the newest savegame or end() if there is no savegame.
 	SavegameHandle quickload();

@@ -117,6 +117,7 @@ void ARX_MENU_Clicked_QUIT();
 void ARX_LoadGame(const SaveGame & save);
 void ARX_QuickLoad();
 void ARX_QuickSave();
+void ARX_AutoSave();
 
 bool MENU_NoActiveWindow();
 

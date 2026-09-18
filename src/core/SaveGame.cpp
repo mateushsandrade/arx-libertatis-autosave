@@ -37,6 +37,7 @@ namespace {
 const fs::path SAVEGAME_DIR = "save";
 const fs::path SAVEGAME_THUMBNAIL = "gsave.bmp";
 const std::string QUICKSAVE_ID = "ARX_QUICK_ARX";
+const std::string AUTOSAVE_ID = "autosave";
 
 enum SaveGameChange {
 	SaveGameRemoved,
@@ -117,6 +118,7 @@ void SaveGameList::update(bool verbose) {
 		save->savefile = path;
 		
 		save->quicksave = (name == QUICKSAVE_ID || name == "ARX_QUICK_ARX1");
+		save->autosave = (name == AUTOSAVE_ID);
 		
 		fs::path thumbnail = path.parent() / SAVEGAME_THUMBNAIL;
 		if(fs::exists(thumbnail)) {
@@ -269,6 +271,20 @@ bool SaveGameList::quicksave(const Image & thumbnail) {
 	}
 	
 	return save(QUICKSAVE_ID, overwrite, thumbnail);
+}
+
+bool SaveGameList::autosave(const Image & thumbnail) {
+
+	// Always overwrite the single existing autosave slot, if any.
+	SavegameHandle overwrite = SavegameHandle();
+	for(size_t i = 0; i != size(); ++i) {
+		if(savelist[i].autosave) {
+			overwrite = SavegameHandle(long(i));
+			break;
+		}
+	}
+
+	return save(AUTOSAVE_ID, overwrite, thumbnail);
 }
 
 SavegameHandle SaveGameList::quickload() {

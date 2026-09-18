@@ -108,7 +108,20 @@ void ARX_QuickSave() {
 	ARX_SOUND_MixerPause(ARX_SOUND_MixerGame);
 	
 	savegames.quicksave(savegame_thumbnail);
-	
+
+	ARX_SOUND_MixerResume(ARX_SOUND_MixerGame);
+}
+
+void ARX_AutoSave() {
+
+	if(!g_canResumeGame) {
+		return;
+	}
+
+	ARX_SOUND_MixerPause(ARX_SOUND_MixerGame);
+
+	savegames.autosave(savegame_thumbnail);
+
 	ARX_SOUND_MixerResume(ARX_SOUND_MixerGame);
 }
 

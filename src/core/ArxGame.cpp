@@ -1143,7 +1143,8 @@ void ArxGame::run() {
 }
 
 /*!
- * \brief Triggers a quicksave once m_autosaveTimer reaches the configured interval.
+ * \brief Triggers an autosave (always overwriting the same dedicated slot) once
+ *        m_autosaveTimer reaches the configured interval.
  */
 void ArxGame::doAutoSave() {
 
@@ -1154,7 +1155,7 @@ void ArxGame::doAutoSave() {
 		m_autosaveTimer = 0;
 		g_hudRoot.quickSaveIconGui.show();
 		GRenderer->getSnapshot(savegame_thumbnail, config.interface.thumbnailSize.x, config.interface.thumbnailSize.y);
-		ARX_QuickSave();
+		ARX_AutoSave();
 	}
 
 }

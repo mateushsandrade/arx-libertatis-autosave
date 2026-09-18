@@ -79,7 +79,7 @@ const int
 	mouseAcceleration = 0,
 	migration = Config::OriginalAssets,
 	quicksaveSlots = 3,
-	autosaveInterval = 30,
+	autosaveInterval = 60,
 	bufferSize = 0,
 	quickLevelTransition = JumpToChangeLevel;
 
