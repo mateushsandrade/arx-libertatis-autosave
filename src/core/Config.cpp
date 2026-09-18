@@ -79,6 +79,7 @@ const int
 	mouseAcceleration = 0,
 	migration = Config::OriginalAssets,
 	quicksaveSlots = 3,
+	autosaveInterval = 30,
 	bufferSize = 0,
 	quickLevelTransition = JumpToChangeLevel;
 
@@ -317,6 +318,7 @@ const std::string
 	forceToggle = "forcetoggle",
 	migration = "migration",
 	quicksaveSlots = "quicksave_slots",
+	autosaveInterval = "autosave_interval",
 	debugLevels = "debug";
 
 } // namespace Key
@@ -540,6 +542,7 @@ bool Config::save() {
 	writer.writeKey(Key::forceToggle, misc.forceToggle);
 	writer.writeKey(Key::migration, misc.migration);
 	writer.writeKey(Key::quicksaveSlots, misc.quicksaveSlots);
+	writer.writeKey(Key::autosaveInterval, misc.autosaveInterval);
 	writer.writeKey(Key::debugLevels, misc.debug);
 	
 	return writer.flush();
@@ -695,6 +698,7 @@ bool Config::init(const fs::path & file) {
 	misc.forceToggle = reader.getKey(Section::Misc, Key::forceToggle, Default::forceToggle);
 	misc.migration = MigrationStatus(reader.getKey(Section::Misc, Key::migration, Default::migration));
 	misc.quicksaveSlots = std::max(reader.getKey(Section::Misc, Key::quicksaveSlots, Default::quicksaveSlots), 1);
+	misc.autosaveInterval = std::max(reader.getKey(Section::Misc, Key::autosaveInterval, Default::autosaveInterval), 0);
 	misc.debug = reader.getKey(Section::Misc, Key::debugLevels, Default::debugLevels);
 	
 	return loaded;

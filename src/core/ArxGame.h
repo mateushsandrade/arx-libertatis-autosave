@@ -87,6 +87,7 @@ public:
 private:
 	void updateTime();
 	void updateInput();
+	void doAutoSave();
 	
 	// Camera stuff
 	void updateFirstPersonCamera();
@@ -118,6 +119,7 @@ private:
 	
 	PlatformInstant m_frameStart;
 	PlatformDuration m_frameDelta;
+	PlatformDuration m_autosaveTimer; // real time accumulated since the last (auto or manual) save
 };
 
 enum InfoPanels {

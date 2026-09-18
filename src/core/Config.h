@@ -240,7 +240,9 @@ public:
 		MigrationStatus migration;
 		
 		int quicksaveSlots;
-		
+
+		int autosaveInterval; //!< Seconds between automatic quicksaves; 0 disables autosave.
+
 		std::string debug; //!< Logger debug levels.
 		
 	} misc;

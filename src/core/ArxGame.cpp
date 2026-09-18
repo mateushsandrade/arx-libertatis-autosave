@@ -205,6 +205,7 @@ ArxGame::ArxGame()
 	, m_gameInitialized(false)
 	, m_frameStart(0)
 	, m_frameDelta(0)
+	, m_autosaveTimer(0)
 { }
 
 ArxGame::~ArxGame() {
@@ -1142,10 +1143,27 @@ void ArxGame::run() {
 }
 
 /*!
+ * \brief Triggers a quicksave once m_autosaveTimer reaches the configured interval.
+ */
+void ArxGame::doAutoSave() {
+
+	m_autosaveTimer += g_platformTime.lastFrameDuration();
+
+	PlatformDuration interval = PlatformDurationMs(s64(config.misc.autosaveInterval) * 1000);
+	if(m_autosaveTimer >= interval) {
+		m_autosaveTimer = 0;
+		g_hudRoot.quickSaveIconGui.show();
+		GRenderer->getSnapshot(savegame_thumbnail, config.interface.thumbnailSize.x, config.interface.thumbnailSize.y);
+		ARX_QuickSave();
+	}
+
+}
+
+/*!
  * \brief Draws the scene.
  */
 void ArxGame::doFrame() {
-	
+
 	if(config.video.fpsLimit && !benchmark::isEnabled()) {
 		
 		PlatformInstant now = platform::getTime();
@@ -1254,8 +1272,12 @@ void ArxGame::doFrame() {
 			GRenderer->getSnapshot(savegame_thumbnail, config.interface.thumbnailSize.x, config.interface.thumbnailSize.y);
 			ARX_QuickSave();
 			g_platformTime.updateFrame();
+			m_autosaveTimer = 0;
+		} else if(config.misc.autosaveInterval > 0 && ARXmenu.mode() == Mode_InGame
+		          && !(player.Interface & INTER_COMBATMODE)) {
+			doAutoSave();
 		}
-		
+
 	}
 	
 	if(g_requestLevelInit) {
