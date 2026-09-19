@@ -1235,6 +1235,9 @@ void ArxGame::doFrame() {
 		TELEPORT_TO_POSITION.clear();
 	}
 
+	// Pick up a background autosave as soon as it finishes, so the savegame list stays current.
+	ARX_CHANGELEVEL_PollAsyncSaveCompleted();
+
 	if(LOADQUEST_SLOT != SavegameHandle() && LOADQUEST_SLOT.handleData() < long(savegames.size())) {
 		ARX_LoadGame(savegames[LOADQUEST_SLOT]);
 		LOADQUEST_SLOT = SavegameHandle();

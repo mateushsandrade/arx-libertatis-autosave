@@ -65,6 +65,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameTime.h"
+#include "core/SaveGame.h"
 #include "core/Version.h"
 
 #include "game/Camera.h"
@@ -101,7 +102,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "physics/Physics.h"
 
+#include "graphics/image/Image.h"
+
 #include "platform/Platform.h"
+#include "platform/Thread.h"
 
 #include "scene/Interactive.h"
 #include "scene/GameSound.h"
@@ -148,6 +152,72 @@ struct Playthrough {
 
 static SaveBlock * g_currentSavedGame = NULL;
 static Playthrough g_currentPlathrough;
+
+/*!
+ * Background job used by ARX_CHANGELEVEL_Save(..., true, ...) to finish an autosave (compress
+ * and write the save block, copy it to its destination slot and save the thumbnail) without
+ * blocking the main thread. Only ever one of these is in flight at a time: anything that touches
+ * g_currentSavedGame or CURRENT_GAME_FILE on the main thread must call waitForPendingAutosave()
+ * first (see below).
+ */
+class AutoSaveJob : public Thread {
+
+	fs::path m_savefile;
+	Image m_thumbnail;
+	fs::path m_thumbnailPath;
+	volatile bool m_done;
+
+	void run() {
+
+		bool ok = g_currentSavedGame->flush("pld");
+
+		if(ok && !fs::copy_file(CURRENT_GAME_FILE, m_savefile, true)) {
+			LogWarning << "Autosave: failed to copy " << CURRENT_GAME_FILE << " to " << m_savefile;
+			ok = false;
+		}
+
+		if(ok && m_thumbnail.isValid() && !m_thumbnail.save(m_thumbnailPath)) {
+			LogWarning << "Autosave: failed to save screenshot to " << m_thumbnailPath;
+		}
+
+		m_done = true;
+	}
+
+public:
+
+	AutoSaveJob(const fs::path & savefile, const Image * thumbnail, const fs::path & thumbnailPath)
+		: m_savefile(savefile)
+		, m_thumbnail(thumbnail ? *thumbnail : Image())
+		, m_thumbnailPath(thumbnailPath)
+		, m_done(false)
+	{ }
+
+	bool isDone() const { return m_done; }
+
+};
+
+static AutoSaveJob * g_pendingAutosaveJob = NULL;
+
+//! Wait for and clean up any autosave still running in the background. Must be called before
+//! anything on the main thread touches g_currentSavedGame or CURRENT_GAME_FILE again.
+static void waitForPendingAutosave() {
+	if(g_pendingAutosaveJob) {
+		g_pendingAutosaveJob->waitForCompletion();
+		delete g_pendingAutosaveJob;
+		g_pendingAutosaveJob = NULL;
+	}
+}
+
+bool ARX_CHANGELEVEL_PollAsyncSaveCompleted() {
+	if(g_pendingAutosaveJob && g_pendingAutosaveJob->isDone()) {
+		waitForPendingAutosave();
+		// The background job never touches the savegame list itself (that would race with the
+		// main thread reading it, e.g. to draw the load-game menu), so refresh it here instead.
+		savegames.update();
+		return true;
+	}
+	return false;
+}
 
 static Entity * convertToValidIO(const std::string & idString) {
 	
@@ -231,7 +301,9 @@ static s32 GetIOAnimIdx2(const Entity * io, const ANIM_HANDLE * anim) {
 }
 
 bool ARX_Changelevel_CurGame_Clear() {
-	
+
+	waitForPendingAutosave();
+
 	if(g_currentSavedGame) {
 		delete g_currentSavedGame, g_currentSavedGame = NULL;
 	}
@@ -250,9 +322,11 @@ bool ARX_Changelevel_CurGame_Clear() {
 }
 
 static bool openCurrentSavedGameFile() {
-	
+
 	arx_assert(!CURRENT_GAME_FILE.empty());
-	
+
+	waitForPendingAutosave();
+
 	if(g_currentSavedGame) {
 		// Already open...
 		return true;
@@ -371,9 +445,11 @@ void ARX_CHANGELEVEL_Change(const std::string & level, const std::string & targe
 }
 
 static bool ARX_CHANGELEVEL_PushLevel(long num, long newnum) {
-	
+
 	LogDebug("ARX_CHANGELEVEL_PushLevel " << num << " " << newnum);
-	
+
+	waitForPendingAutosave();
+
 	ARX_SCRIPT_EventStackExecuteAll();
 	
 	// Close secondary inventory before leaving
@@ -2561,8 +2637,9 @@ static bool ARX_CHANGELEVEL_PopLevel(long instance, bool reloadflag, const std::
 	return true;
 }
 
-bool ARX_CHANGELEVEL_Save(const std::string & name, const fs::path & savefile) {
-	
+bool ARX_CHANGELEVEL_Save(const std::string & name, const fs::path & savefile, bool async,
+                          const Image * thumbnail, const fs::path & thumbnailPath) {
+
 	arx_assert(!savefile.empty() && fs::exists(savefile.parent()));
 	
 	LogDebug("ARX_CHANGELEVEL_Save " << savefile << " " << name);
@@ -2600,20 +2677,33 @@ bool ARX_CHANGELEVEL_Save(const std::string & name, const fs::path & savefile) {
 	
 	const char * dat = reinterpret_cast<const char *>(&pld);
 	g_currentSavedGame->save("pld", dat, sizeof(ARX_CHANGELEVEL_PLAYER_LEVEL_DATA));
-	
+
+	// The game state itself is now fully captured (in memory, pending compression and the
+	// actual disk write). Everything below this point only touches that captured data, not
+	// live game state, so it can safely run on a background thread without risking a race
+	// with the game continuing to run.
+
+	if(async) {
+		arx_assert(!g_pendingAutosaveJob);
+		g_pendingAutosaveJob = new AutoSaveJob(savefile, thumbnail, thumbnailPath);
+		g_pendingAutosaveJob->setThreadName("Autosave");
+		g_pendingAutosaveJob->start();
+		return true;
+	}
+
 	// Close the savegame file
-	
+
 	if(!g_currentSavedGame->flush("pld")) {
 		LogError << "Could not complete the save";
 		return false;
 	}
-	
+
 	// Copy the savegame and screenshot to the final destination, overwriting previous files
 	if(!fs::copy_file(CURRENT_GAME_FILE, savefile, true)) {
 		LogWarning << "Failed to copy save " << CURRENT_GAME_FILE <<" to " << savefile;
 		return false;
 	}
-	
+
 	return true;
 }
 

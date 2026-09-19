@@ -385,18 +385,29 @@ bool SaveBlock::open(bool writable) {
 }
 
 bool SaveBlock::flush(const std::string & important) {
-	
+
 	arx_assert_msg(important.find_first_of(BADSAVCHAR) == std::string::npos,
 	               "bad save filename: \"%s\"", important.c_str());
-	
+
+	// Compress and write out everything that was buffered by save() since the last flush.
+	// This concentrates all the (potentially slow) compression and disk I/O work here instead
+	// of spreading it across every save() call, so it can be done all at once - e.g. on a
+	// background thread - instead of stalling whoever is calling save() in a loop.
+	for(Files::iterator it = m_files.begin(); it != m_files.end(); ++it) {
+		if(it->second.dirty && !writeFileData(it->second)) {
+			LogError << "Failed to write " << it->first << " to save block " << m_savefile;
+			return false;
+		}
+	}
+
 	if((m_usedSize * 2 < m_totalSize || m_chunkCount > (m_files.size() * 4 / 3))) {
 		defragment();
 	}
-	
+
 	writeFileTable(important);
-	
+
 	m_handle.flush();
-	
+
 	return m_handle.good();
 }
 
@@ -503,67 +514,86 @@ bool SaveBlock::defragment() {
 }
 
 bool SaveBlock::save(const std::string & name, const char * data, size_t size) {
-	
+
 	if(!m_handle) {
 		return false;
 	}
-	
+
 	arx_assert_msg(name.find_first_of(BADSAVCHAR) == std::string::npos,
 	               "bad save filename: \"%s\"", name.c_str());
-	
+
+	// Just buffer the raw data here - compression and the actual disk write are deferred to
+	// flush() so that all of it can happen at once instead of being interleaved with (and
+	// stalling) whatever is calling save() in a loop.
 	File * file = &m_files[name];
-	
+	file->pending.assign(data, size);
 	file->uncompressedSize = size;
-	
+	file->dirty = true;
+
+	return true;
+}
+
+bool SaveBlock::writeFileData(File & file) {
+
+	const std::string & data = file.pending;
+	size_t size = data.size();
+
 	if(size == 0) {
-		file->comp = File::None;
-		file->storedSize = 0;
+		file.comp = File::None;
+		file.storedSize = 0;
+		file.dirty = false;
+		file.pending.clear();
 		return true;
 	}
-	
-	uLongf compressedSize = size - 1;
+
+	uLongf compressedSize = uLongf(size - 1);
 	std::vector<char> compressed(compressedSize);
 	const char * p;
 	if(compress2(reinterpret_cast<Bytef *>(compressed.data()), &compressedSize,
-	             reinterpret_cast<const Bytef *>(data), size, 1) == Z_OK) {
-		file->comp = File::Deflate;
-		file->storedSize = compressedSize;
+	             reinterpret_cast<const Bytef *>(data.data()), uLong(size), 1) == Z_OK) {
+		file.comp = File::Deflate;
+		file.storedSize = compressedSize;
 		p = compressed.data();
 	} else {
-		file->comp = File::None;
-		file->storedSize = size;
-		p = data;
+		file.comp = File::None;
+		file.storedSize = size;
+		p = data.data();
 	}
-	
-	LogDebug("saving " << name << " " << file->uncompressedSize << " " << file->storedSize);
-	
-	size_t remaining = file->storedSize;
-	
-	for(File::ChunkList::iterator chunk = file->chunks.begin();
-	    chunk != file->chunks.end(); ++chunk) {
-		
+
+	LogDebug("saving " << file.uncompressedSize << " " << file.storedSize);
+
+	size_t remaining = file.storedSize;
+
+	for(File::ChunkList::iterator chunk = file.chunks.begin();
+	    chunk != file.chunks.end(); ++chunk) {
+
 		m_handle.seekp(chunk->offset + 4);
-		
+
 		if(chunk->size > remaining) {
 			m_usedSize -= chunk->size - remaining;
 			chunk->size = remaining;
 		}
-		
+
 		m_handle.write(p, chunk->size);
 		p += chunk->size;
 		remaining -= chunk->size;
-		
+
 		if(remaining == 0) {
-			file->chunks.erase(++chunk, file->chunks.end());
+			file.chunks.erase(++chunk, file.chunks.end());
+			file.dirty = false;
+			file.pending.clear();
 			return true;
 		}
 	}
-	
-	file->chunks.push_back(File::Chunk(remaining, m_totalSize));
+
+	file.chunks.push_back(File::Chunk(remaining, m_totalSize));
 	m_handle.seekp(m_totalSize + 4);
 	m_handle.write(p, remaining);
 	m_totalSize += remaining, m_usedSize += remaining, m_chunkCount++;
-	
+
+	file.dirty = false;
+	file.pending.clear();
+
 	return !m_handle.fail();
 }
 
@@ -572,15 +602,20 @@ void SaveBlock::remove(const std::string & name) {
 }
 
 std::string SaveBlock::load(const std::string & name) {
-	
+
 	arx_assert_msg(name.find_first_of(BADSAVCHAR) == std::string::npos,
 	               "bad save filename: \"%s\"", name.c_str());
-	
+
 	Files::const_iterator file = m_files.find(name);
 	if(file == m_files.end()) {
 		return std::string();
 	}
-	
+
+	// Data saved since the last flush() only exists in memory so far - return it directly.
+	if(file->second.dirty) {
+		return file->second.pending;
+	}
+
 	return file->second.loadData(m_handle, name);
 }
 

@@ -51,6 +51,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 namespace fs { class path; }
 
+class Image;
+
 void ARX_CHANGELEVEL_Change(const std::string & level, const std::string & target, float angle);
 
 long ARX_CHANGELEVEL_GetInfo(const fs::path & savefile, std::string & name, float & version, long & level);
@@ -62,7 +64,28 @@ bool ARX_CHANGELEVEL_StartNew();
  */
 void ARX_CHANGELEVEL_Load(const fs::path & savefile);
 
-bool ARX_CHANGELEVEL_Save(const std::string & name, const fs::path & savefile);
+/*!
+ * \param async If true, the (potentially slow) compression, disk write and screenshot save
+ *              are done on a background thread and this function returns as soon as the game
+ *              state itself has been captured. Any other function in this file that touches
+ *              the shared save-game staging file will transparently wait for that background
+ *              work to finish before proceeding, so this is safe to use while the game keeps
+ *              running. Used for autosaves so they don't stall the main thread.
+ * \param thumbnail Screenshot to save alongside the game state, only used if async is true
+ *                  (the synchronous caller is expected to save it itself once this returns).
+ * \param thumbnailPath Where to save \p thumbnail, only used if async is true.
+ */
+bool ARX_CHANGELEVEL_Save(const std::string & name, const fs::path & savefile, bool async = false,
+                          const Image * thumbnail = NULL, const fs::path & thumbnailPath = fs::path());
+
+/*!
+ * Non-blocking check for a background save started via ARX_CHANGELEVEL_Save(..., true, ...).
+ * If one has finished since the last call, this joins its thread and refreshes the savegame
+ * list (which the background thread itself must not touch). Should be called regularly (e.g.
+ * once per frame) while the game is running.
+ * \return true if a pending background save just completed.
+ */
+bool ARX_CHANGELEVEL_PollAsyncSaveCompleted();
 
 bool ARX_Changelevel_CurGame_Clear();
 

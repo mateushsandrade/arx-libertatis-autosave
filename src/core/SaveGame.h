@@ -85,7 +85,7 @@ public:
 	 * \return true if the game was successfully saved.
 	 */
 	bool save(const std::string & name, SavegameHandle overwrite = SavegameHandle(),
-	          const Image & thumbnail = Image());
+	          const Image & thumbnail = Image(), bool async = false);
 	
 	//! Perform a quicksave: Maintain a number of quicksave slots and always overwrite the oldest one.
 	bool quicksave(const Image & thumbnail = Image());

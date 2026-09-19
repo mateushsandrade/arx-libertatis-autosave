@@ -87,6 +87,12 @@ private:
 		ChunkList chunks;
 		Compression comp;
 		
+		//! Raw data passed to save() but not yet compressed and written to disk.
+		std::string pending;
+		bool dirty;
+		
+		File() : storedSize(0), uncompressedSize(0), comp(Unknown), dirty(false) { }
+		
 		const char * compressionName() const;
 		
 		bool loadOffsets(std::istream & handle, u32 version);
@@ -109,6 +115,8 @@ private:
 	bool defragment();
 	bool loadFileTable();
 	void writeFileTable(const std::string & important);
+	//! Compress and write out a single dirty (buffered) file. Called from flush().
+	bool writeFileData(File & file);
 	
 public:
 	

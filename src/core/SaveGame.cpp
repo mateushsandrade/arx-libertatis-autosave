@@ -214,8 +214,9 @@ void SaveGameList::remove(SavegameHandle handle) {
 	update();
 }
 
-bool SaveGameList::save(const std::string & name, SavegameHandle overwrite, const Image & thumbnail) {
-	
+bool SaveGameList::save(const std::string & name, SavegameHandle overwrite, const Image & thumbnail,
+                         bool async) {
+
 	fs::path savefile;
 	if(overwrite != SavegameHandle()) {
 		savefile = savelist[size_t(overwrite.handleData())].savefile;
@@ -226,24 +227,33 @@ bool SaveGameList::save(const std::string & name, SavegameHandle overwrite, cons
 			oss << "save" << std::setfill('0') << std::setw(4) << index++;
 			savefile = fs::getUserDir() / SAVEGAME_DIR / oss.str();
 		} while(fs::exists(savefile));
-		
+
 		if(!fs::create_directories(savefile)) {
 			LogWarning << "Failed to create save directory";
 		}
-		
+
 		savefile /= SAVEGAME_NAME;
 	}
-	
+
+	fs::path thumbnailPath = savefile.parent() / SAVEGAME_THUMBNAIL;
+
+	if(async) {
+		// The background job saves the screenshot and ARX_CHANGELEVEL_PollAsyncSaveCompleted()
+		// refreshes the savegame list once it's done - neither can safely happen here.
+		return ARX_CHANGELEVEL_Save(name, savefile, true, thumbnail.isValid() ? &thumbnail : NULL,
+		                            thumbnailPath);
+	}
+
 	if(!ARX_CHANGELEVEL_Save(name, savefile)) {
 		return false;
 	}
-	
-	if(thumbnail.isValid() && !thumbnail.save(savefile.parent() / SAVEGAME_THUMBNAIL)) {
-		LogWarning << "Failed to save screenshot to " << (savefile.parent() / SAVEGAME_THUMBNAIL);
+
+	if(thumbnail.isValid() && !thumbnail.save(thumbnailPath)) {
+		LogWarning << "Failed to save screenshot to " << thumbnailPath;
 	}
-	
+
 	update();
-	
+
 	return true;
 }
 
@@ -284,7 +294,7 @@ bool SaveGameList::autosave(const Image & thumbnail) {
 		}
 	}
 
-	return save(AUTOSAVE_ID, overwrite, thumbnail);
+	return save(AUTOSAVE_ID, overwrite, thumbnail, true);
 }
 
 SavegameHandle SaveGameList::quickload() {
